@@ -4,7 +4,6 @@ import * as D from './daty.js';
 import { liczba, bezOgonkow, esc, odmianaPosilkow } from './tekst.js';
 import * as R from './import-respo.js';
 import * as S from './synchronizacja.js';
-import { parsujZegarek } from './zegarek.js';
 
 const wyniki = [];
 const test = (nazwa, fn) => {
@@ -20,17 +19,29 @@ const osoba = { plec: 'M', wiek: 30, wzrost: 180, masa: 80 };
 // PPM: 10·80 + 6,25·180 − 5·30 + 5 = 800 + 1125 − 150 + 5 = 1780
 test('PPM mężczyzny', () => rowne(O.ppm(osoba), 1780));
 test('PPM kobiety (−161 zamiast +5)', () => rowne(O.ppm({ ...osoba, plec: 'K' }), 1614));
-// dodatek typowego treningu: 700 · 75% = 525; tygodniowo 3,5 · 525 / 7 = 262,5; 2500 − 262,5 = 2237,5 → 2238
+// Zegarek podaje łączne kcal. Spoczynkowe w 60 min: 1780 · 60 / 1440 = 74,17; 700 − 74,17 = 625,83 → 626
+test('trening: aktywne = łączne − spoczynkowe z czasu', () => rowne(O.aktywneZLacznych(700, 60, osoba), 626));
+// 1780 · 90 / 1440 = 111,25; 700 − 111,25 = 588,75 → 589
+test('trening: dłuższy trening, więcej spoczynkowych', () => rowne(O.aktywneZLacznych(700, 90, osoba), 589));
+test('trening: łączne poniżej spoczynkowych daje 0', () => rowne(O.aktywneZLacznych(50, 60, osoba), 0));
+test('trening: bez danych osoby liczy całość', () => rowne([O.aktywneZLacznych(700, 60, {}), O.aktywneZLacznych('', 60, osoba)], [700, 0]));
+test('trening: typowy z ustawień (domyślnie 60 min)', () => rowne([O.DOMYSLNE_USTAWIENIA.typowyCzas, O.aktywneTypowego({ ...plan, ...osoba })], [60, 626]));
+// stary zapis bez czasu w ustawieniach dostaje domyślne 60 min (jak przy wczytaniu w magazyn.js)
+test('trening: stare ustawienia bez czasu', () => rowne(O.aktywneTypowego({ ...O.DOMYSLNE_USTAWIENIA, ...{ typowyTrening: 700, plec: 'M', wiek: 30, wzrost: 180, masa: 80 } }), 626));
+test('trening sprzed wersji 0.6 (same aktywne kcal) liczy się jak dotąd', () => rowne(O.dodatekTreningu(75, { kcalAktywne: 700, start: '18:00', koniec: '19:10' }), 525));
+// bez danych osoby: dodatek typowego treningu 700 · 75% = 525; tygodniowo 3,5 · 525 / 7 = 262,5; 2500 − 262,5 = 2237,5 → 2238
 test('dzień bez treningu', () => rowne(O.limitBazowy(plan), 2238));
 test('dzień z treningiem 700 kcal', () => rowne(O.limitDnia(2238, 75, [{ kcalAktywne: 700 }]), { baza: 2238, dodatek: 525, razem: 2763 }));
 test('tydzień trzyma średnią z planu', () => rowne(O.sredniaTygodnia(plan), 2500));
 // (3,5 · 2238 + 3,5 · 2763) / 7 = 2500,5
 test('ręczne sprawdzenie średniej tygodnia', () => rowne(Math.abs((3.5 * 2238 + 3.5 * 2763) / 7 - 2500) <= 1, true));
-// 1900 − 262,5 = 1637,5 → 1638 < PPM 1780 → 1780; średnio 1780 + 262,5 = 2042,5 → 2043
+// z danymi osoby typowy trening to 626 aktywnych: 626 · 75% = 469,5 → 470; tygodniowo 3,5 · 470 / 7 = 235
+// 1900 − 235 = 1665 < PPM 1780 → 1780; średnio 1780 + 235 = 2015
 test('dolna granica: spoczynkowe spalanie', () => rowne(O.limitBazowy({ ...plan, ...osoba, sredniaDzienna: 1900 }), 1780));
-test('dolna granica: oznaczenie i średnia', () => rowne([O.podniesionyDoPPM({ ...plan, ...osoba, sredniaDzienna: 1900 }), O.sredniaTygodnia({ ...plan, ...osoba, sredniaDzienna: 1900 })], [true, 2043]));
+test('dolna granica: oznaczenie i średnia', () => rowne([O.podniesionyDoPPM({ ...plan, ...osoba, sredniaDzienna: 1900 }), O.sredniaTygodnia({ ...plan, ...osoba, sredniaDzienna: 1900 })], [true, 2015]));
 test('bez danych osoby nie ma dolnej granicy', () => rowne(O.limitBazowy({ ...plan, sredniaDzienna: 1900 }), 1638));
-test('dane osoby ponad granicą nic nie zmieniają', () => rowne(O.limitBazowy({ ...plan, ...osoba }), 2238));
+// 2500 − 235 = 2265; po typowym treningu 2265 + 470 = 2735; tydzień (3,5 · 2265 + 3,5 · 2735) / 7 = 2500
+test('dane osoby ponad granicą: dzień bez treningu i z treningiem', () => rowne([O.limitBazowy({ ...plan, ...osoba }), O.limitDnia(2265, 75, [{ kcalAktywne: 626 }]).razem, O.sredniaTygodnia({ ...plan, ...osoba })], [2265, 2735, 2500]));
 test('bez średniej z planu nie ma limitu', () => rowne([O.limitBazowy(O.DOMYSLNE_USTAWIENIA), O.sredniaTygodnia(O.DOMYSLNE_USTAWIENIA)], [null, null]));
 test('niepełne dane osoby: bez dolnej granicy', () => rowne(O.maParametry({ ...osoba, masa: null }), false));
 // 333 · 0,75 = 249,75 → 250 dla każdego treningu osobno
@@ -148,6 +159,11 @@ test('import: ponowny import tego samego planu nic nie zmienia', () => {
 // Synchronizacja: dokumenty i scalanie trójstronne (urządzenie, chmura, ostatnio zsynchronizowane).
 test('sync: kolejność pól nie zmienia odcisku', () => rowne([S.kanoniczny({ b: 1, a: { d: 2, c: 3 } }), S.skrot({ a: 1, b: [1, 2] }) === S.skrot({ b: [1, 2], a: 1 }), S.skrot({ a: 1 }) === S.skrot({ a: 2 })], ['{"a":{"c":3,"d":2},"b":1}', true, false]));
 test('sync: pola undefined pomijane jak w Firestore', () => rowne(S.kanoniczny({ a: 1, b: undefined }), '{"a":1}'));
+test('sync: odcisk z pamięci zmienia się razem z treścią', () => {
+  const d = { wpisy: [{ id: 'a', kcal: 500 }] }, przed = S.skrot(d);
+  d.wpisy.push({ id: 'b', kcal: 300 });
+  rowne([S.skrot(d) !== przed, S.skrot({ wpisy: [{ kcal: 500, id: 'a' }] }) === przed, S.skrot(undefined) === S.skrot(null)], [true, true, true]);
+});
 const stanTestowy = { wersja: 1, ustawienia: { sredniaDzienna: 2500 }, posilki: [{ id: 'p1', nazwa: 'Testowy gulasz' }], dni: { '2026-11-01': { wpisy: [{ id: 'w1', kcal: 500 }], treningi: [] } } };
 test('sync: stan → dokumenty → stan', () => {
   const d = S.dokumentyZeStanu(stanTestowy);
@@ -168,15 +184,14 @@ test('sync: echo własnego zapisu niczego nie zmienia', () => {
   rowne([S.takieSame(S.scalDokumenty(lokalne, zChmury, S.skroty(zChmury)).wynik, lokalne), S.takieSame(lokalne, dok(['.', {}]))], [true, false]);
 });
 test('sync: co przenieść na puste konto', () => rowne([S.coPrzeniesc(stanTestowy), S.coPrzeniesc({ ustawienia: {}, posilki: [], dni: { '2026-11-01': { wpisy: [], treningi: [] } } })], [{ posilki: 1, dni: 1, ustawienia: true }, null]));
-
-// Zegarek: próbki przed treningiem (17:50), w trakcie (18:10, 18:40 z przecinkiem) i po (19:30)
-const ZEGAREK = ['BILANS-TRENING', 'START: 2026-11-02T18:00:00+01:00', 'KONIEC: 2026-11-02T19:15:00+01:00', 'DATY:',
-  '2026-11-02T17:50:00+01:00', '2026-11-02T18:10:00+01:00', '2026-11-02T18:40:00+01:00', '2026-11-02T19:30:00+01:00',
-  'KCAL:', '5', '250', '300,4', '7'].join('\n');
-test('zegarek: suma kcal tylko z okna treningu', () => rowne(parsujZegarek(ZEGAREK).kcalAktywne, 550));
-test('zegarek: obcy tekst w schowku', () => rowne(!!parsujZegarek('coś innego').blad, true));
-test('zegarek: trening jeszcze trwa', () => rowne(!!parsujZegarek(ZEGAREK.replace('KONIEC: 2026-11-02T19:15', 'KONIEC: 2026-11-02T17:00')).blad, true));
-test('zegarek: liczba dat i kcal musi się zgadzać', () => rowne(!!parsujZegarek(ZEGAREK.replace('\n7', '')).blad, true));
+// pusta kopia z pamięci telefonu (bez zasięgu) nie może udawać pustego konta
+const zSerwera = { fromCache: false }, zPamieci = { fromCache: true };
+test('sync: pierwsze scalenie dopiero na danych z serwera', () => rowne([
+  S.potwierdzonePrzezSerwer({ konto: null, posilki: null, dni: new Map(), meta: { konto: zPamieci, posilki: zPamieci, dni: zPamieci } }),
+  S.potwierdzonePrzezSerwer({ konto: null, posilki: null, dni: new Map(), meta: { konto: zSerwera, posilki: zSerwera, dni: zPamieci } }),
+  S.potwierdzonePrzezSerwer({ konto: null, posilki: undefined, dni: new Map(), meta: { konto: zSerwera, dni: zSerwera } }),
+  S.potwierdzonePrzezSerwer({ konto: null, posilki: null, dni: new Map(), meta: { konto: zSerwera, posilki: zSerwera, dni: zSerwera } }),
+], [false, false, false, true]));
 
 const zle = wyniki.filter(w => !w.ok);
 document.getElementById('podsumowanie').innerHTML = `<b class="${zle.length ? 'zle' : 'ok'}">Wynik: ${wyniki.length - zle.length}/${wyniki.length} zaliczonych</b>`;

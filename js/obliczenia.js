@@ -1,8 +1,9 @@
 // Obliczenia Bilansu: limit kalorii, cele makro, sumy dnia. Bez DOM, sprawdzane w testy.html.
 
 // Wartości osoby (średni limit z planu, białko, dane do wzoru) wpisuje się w Ustawieniach, nie w kodzie.
+// Typowy trening to łączne kcal z zegarka i czas w minutach (aktywne liczy aplikacja).
 export const DOMYSLNE_USTAWIENIA = {
-  sredniaDzienna: null, treningiTydzien: 3.5, typowyTrening: 600, doliczanieTreningu: 75,
+  sredniaDzienna: null, treningiTydzien: 3.5, typowyTrening: 600, typowyCzas: 60, doliczanieTreningu: 75,
   bialko: null, udzialT: 36,
   plec: '', wiek: null, wzrost: null, masa: null,
 };
@@ -23,7 +24,19 @@ export const dodatekTreningu = (doliczanie, trening) => Math.round((Number(treni
 // Każdy trening zaokrąglany osobno, żeby kwoty z kart treningów sumowały się do limitu.
 export const dodatekZaTreningi = (doliczanie, treningi = []) => treningi.reduce((s, t) => s + dodatekTreningu(doliczanie, t), 0);
 
-const przecietnyDodatek = u => u.treningiTydzien * dodatekTreningu(u.doliczanieTreningu, { kcalAktywne: u.typowyTrening }) / 7;
+// Zegarek podaje łączne kcal: aktywne plus spoczynkowe z czasu treningu. Spoczynkowe są już w limicie,
+// więc odejmujemy PPM przypadające na te minuty. Bez danych osoby nie da się ich policzyć: liczymy całość.
+export const spoczynkoweWCzasie = (minuty, u) => ppm(u) * (Number(minuty) || 0) / 1440;
+
+export function aktywneZLacznych(laczne, minuty, u) {
+  const kcal = Number(laczne) || 0;
+  if (!maParametry(u)) return Math.round(kcal);
+  return Math.max(0, Math.round(kcal - spoczynkoweWCzasie(minuty, u)));
+}
+
+export const aktywneTypowego = u => aktywneZLacznych(u.typowyTrening, u.typowyCzas, u);
+
+const przecietnyDodatek = u => u.treningiTydzien * dodatekTreningu(u.doliczanieTreningu, { kcalAktywne: aktywneTypowego(u) }) / 7;
 
 // Dzień bez treningu: średnia z planu minus przeciętny dodatek za treningi rozłożony na tydzień,
 // więc tydzień trzyma średnią z planu. Nigdy mniej niż PPM. Bez średniej z planu: null.

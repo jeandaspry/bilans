@@ -13,11 +13,27 @@ export function kanoniczny(x) {
 }
 
 // Krótki odcisk treści (FNV-1a + długość), żeby pamiętać, co już jest w chmurze, bez trzymania kopii danych.
-export function skrot(dane) {
+function odcisk(dane) {
   const s = kanoniczny(dane);
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
   return `${(h >>> 0).toString(36)}:${s.length}`;
+}
+
+// Przy kilkuset dniach historii każda zmiana liczyłaby odciski wszystkich dni od nowa (ok. 70 ms).
+// Ta sama treść daje ten sam JSON, więc odcisk liczymy raz; JSON.stringify jest wbudowany i szybki.
+const pamiecOdciskow = new Map();
+let rozmiarPamieci = 0; // w znakach; powyżej ok. 4 MB pamięć zaczyna się od nowa
+export function skrot(dane) {
+  const json = JSON.stringify(dane ?? null);
+  let h = pamiecOdciskow.get(json);
+  if (h === undefined) {
+    if (rozmiarPamieci > 4e6) { pamiecOdciskow.clear(); rozmiarPamieci = 0; }
+    h = odcisk(dane);
+    pamiecOdciskow.set(json, h);
+    rozmiarPamieci += json.length;
+  }
+  return h;
 }
 
 export const skroty = dokumenty => new Map([...dokumenty].map(([s, d]) => [s, skrot(d)]));
@@ -60,6 +76,10 @@ export function planZapisow(lokalne, baza) {
     usuniecia: [...baza.keys()].filter(s => !lokalne.has(s)),
   };
 }
+
+// Pierwsze scalenie po połączeniu tylko na danych potwierdzonych przez serwer. Kopia z pamięci telefonu
+// bywa pusta (np. pierwsze logowanie przy słabym zasięgu) i wyglądałaby jak puste konto, które nadpisałoby chmurę.
+export const potwierdzonePrzezSerwer = czesci => ['konto', 'posilki', 'dni'].every(k => czesci[k] !== undefined && czesci.meta?.[k]?.fromCache === false);
 
 // Co z danych na urządzeniu (sprzed logowania) można przenieść na puste konto; null, gdy nic.
 export function coPrzeniesc(stan) {

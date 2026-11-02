@@ -154,7 +154,7 @@ h2 { font-size: 17px; font-weight: 600; }
 @keyframes wjazd { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* formularze */
-.pole { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--szary); }
+.pole { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; font-size: 13px; color: var(--szary); }
 .pole input, .pole select { width: 100%; height: 46px; border-radius: 12px; border: 1px solid var(--linia); background: var(--karta-2); padding: 0 12px; -webkit-appearance: none; appearance: none; }
 .pole input.blad { border-color: var(--ponad); box-shadow: 0 0 0 1px var(--ponad); }
 .pola-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

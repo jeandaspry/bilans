@@ -7,23 +7,22 @@ import { esc, bezOgonkow, liczba, f, opisPorcji, odmianaPosilkow } from './tekst
 import { POSILKI_TESTOWE } from './dane-testowe.js';
 import * as R from './import-respo.js';
 import * as C from './chmura.js';
-import { parsujZegarek } from './zegarek.js';
 
-const WERSJA = '0.5';
-const SKROT_ZEGARKA = 'Bilans trening';
+const WERSJA = '0.6';
 const KATEGORIE = ['Posiłek 1', 'Posiłek 2', 'Posiłek 3', 'Przekąska'];
 const ZNAKI = { 'Posiłek 1': '1', 'Posiłek 2': '2', 'Posiłek 3': '3', 'Przekąska': 'P', 'Własne': 'W' };
 const ZAKLADKI = [['dzisiaj', 'Dzisiaj'], ['historia', 'Historia'], ['posilki', 'Posiłki'], ['ustawienia', 'Ustawienia']];
 const PORCJE = [[1, 'Całość'], [0.75, '¾'], [0.5, '½'], [0.25, '¼']];
+const DNI_NA_STRONE = 60; // Historia rysuje tyle dni naraz, żeby po latach wpisów ekran dalej otwierał się od razu
 // Dopuszczalne wartości ustawień; puste pole z listy OPCJONALNE znaczy „nie wpisano”.
 const ZAKRESY = {
-  sredniaDzienna: [1000, 6000], treningiTydzien: [0, 14], typowyTrening: [0, 3000], doliczanieTreningu: [0, 100],
+  sredniaDzienna: [1000, 6000], treningiTydzien: [0, 14], typowyTrening: [0, 3000], typowyCzas: [5, 300], doliczanieTreningu: [0, 100],
   bialko: [20, 400], udzialT: [10, 60], wiek: [14, 100], wzrost: [120, 230], masa: [35, 350],
 };
 const OPCJONALNE = ['sredniaDzienna', 'bialko', 'wiek', 'wzrost', 'masa'];
 
 const ui = {
-  ekran: 'dzisiaj', dzien: D.kluczDnia(), dzisPrzyRysowaniu: D.kluczDnia(), filtr: 'Wszystkie', szukaj: '', cofnij: null, import: null,
+  ekran: 'dzisiaj', dzien: D.kluczDnia(), dzisPrzyRysowaniu: D.kluczDnia(), filtr: 'Wszystkie', szukaj: '', cofnij: null, import: null, dniHistorii: DNI_NA_STRONE,
   logowanie: false, chmura: { tryb: 'lokalnie' }, przeniesienie: null,
 };
 const $ = s => document.querySelector(s);
@@ -107,10 +106,6 @@ function ekranDzisiaj(s) {
     <section class="sekcja">
       <div class="sekcja-tytul"><h2>Trening</h2><button class="maly" data-akcja="dodaj-trening">${IKONY.plus}Dodaj</button></div>
       ${dz.treningi.length ? `<div class="lista">${dz.treningi.map(t => kartaTreningu(t, p.doliczanie)).join('')}</div>` : '<p class="pusto">Brak treningu w tym dniu.</p>'}
-      <div class="pola-2">
-        <button class="drugi" data-akcja="pobierz-z-zegarka">${IKONY.hantla}Z zegarka</button>
-        <button class="drugi" data-akcja="wklej-z-zegarka">Wklej wynik</button>
-      </div>
     </section>
     <section class="sekcja">
       <h2>Zjedzone</h2>
@@ -162,16 +157,20 @@ function pasekMakro(nazwa, klasa, ile, cel) {
 }
 
 function kartaWpisu(w) {
-  const opis = [w.kategoria || 'Spoza listy', w.godzina, w.ulamek !== 1 ? opisPorcji(w.ulamek) : ''].filter(Boolean).join(' · ');
+  const opis = [w.kategoria || 'Spoza listy', w.godzina, w.ulamek && w.ulamek !== 1 ? opisPorcji(w.ulamek) : ''].filter(Boolean).join(' · ');
   return `<div class="wpis karta"><div class="znak">${ZNAKI[w.kategoria] || '+'}</div>
     <div class="tresc"><b>${esc(w.nazwa)}</b><span>${esc(opis)}</span><span class="liczby">${linijkaMakro(w)}</span></div>
     <button class="ikona-przycisk" data-akcja="usun-wpis" data-id="${esc(w.id)}" aria-label="Usuń: ${esc(w.nazwa)}">${IKONY.kosz}</button></div>`;
 }
 
+// Treningi sprzed wersji 0.6 mają tylko aktywne kcal (i czasem godziny).
 function kartaTreningu(t, doliczanie) {
-  const czas = t.start ? `${t.start}${t.koniec ? '–' + t.koniec : ''} · ` : '';
+  const dodatek = `+${f(O.dodatekTreningu(doliczanie, t))} kcal do limitu`;
+  const [opis, wynik] = t.kcalLaczne
+    ? [[t.minuty && `${f(t.minuty)} min`, `${f(t.kcalLaczne)} kcal łącznie`].filter(Boolean).join(' · '), `aktywne ${f(t.kcalAktywne)} · ${dodatek}`]
+    : [`${t.start ? `${t.start}${t.koniec ? '–' + t.koniec : ''} · ` : ''}${f(t.kcalAktywne)} kcal aktywnych`, dodatek];
   return `<div class="wpis karta"><div class="znak">${IKONY.hantla}</div>
-    <div class="tresc"><b>${esc(t.nazwa)}</b><span>${esc(czas)}${f(t.kcalAktywne)} kcal aktywnych</span><span>+${f(O.dodatekTreningu(doliczanie, t))} kcal do limitu</span></div>
+    <div class="tresc"><b>${esc(t.nazwa)}</b><span class="liczby">${esc(opis)}</span><span>${esc(wynik)}</span></div>
     <button class="ikona-przycisk" data-akcja="usun-trening" data-id="${esc(t.id)}" aria-label="Usuń trening">${IKONY.kosz}</button></div>`;
 }
 
@@ -289,44 +288,53 @@ function dodajReczny() {
 
 // --- treningi
 
+// Osoba przepisuje z podsumowania treningu łączne kcal i czas; aktywne liczymy od razu i zapisujemy z treningiem,
+// więc późniejsza zmiana masy ciała nie zmienia minionych dni.
 function oknoTreningu() {
-  const doliczanie = parametryDnia(M.pobierz(), ui.dzien).doliczanie;
+  const s = M.pobierz(), doliczanie = parametryDnia(s, ui.dzien).doliczanie;
   okno(`<h2>Trening</h2>
     <label class="pole">Nazwa<input id="tr-nazwa" type="text" value="Trening siłowy" autocomplete="off"></label>
-    <label class="pole">Aktywne kcal z podsumowania w zegarku<input id="tr-kcal" type="text" inputmode="numeric" placeholder="np. 600" autocomplete="off"></label>
-    <div class="pola-2"><label class="pole">Początek<input id="tr-start" type="time"></label><label class="pole">Koniec<input id="tr-koniec" type="time"></label></div>
-    <p class="opis">Wpisz aktywne kcal, nie łączne. Do limitu dochodzi ${f(doliczanie)}% tej liczby. Automatyczny odczyt z Apple Watch dojdzie w kolejnym kroku.</p>
+    <div class="pola-2">
+      <label class="pole">Kcal łącznie<input id="tr-laczne" type="text" inputmode="numeric" placeholder="np. 700" autocomplete="off"></label>
+      <label class="pole">Czas (min)<input id="tr-minuty" type="text" inputmode="numeric" value="${esc(s.ustawienia.typowyCzas ?? '')}" autocomplete="off"></label>
+    </div>
+    <p class="opis">Z podsumowania treningu w zegarku albo w aplikacji Fitness; czas w minutach (1:02:15 to 62). Spoczynkowe spalanie z czasu treningu jest już w limicie, więc aplikacja je odejmie, a do limitu doliczy ${f(doliczanie)}% reszty.</p>
+    <p id="tr-wynik" class="zgodne liczby" hidden></p>
     <p id="tr-uwaga" class="uwaga" hidden></p>
     <button class="glowny" data-akcja="zapisz-trening">Dodaj trening</button>`);
 }
 
+// Liczby z okna treningu; null, gdy niepełne albo spoza rozsądnego zakresu.
+function treningZOkna() {
+  const laczne = liczba($('#tr-laczne')?.value), minuty = liczba($('#tr-minuty')?.value);
+  if (!(laczne > 0 && laczne < 5000 && minuty > 0 && minuty <= 600)) return null;
+  const kcalLaczne = Math.round(laczne), m = Math.round(minuty);
+  return { kcalLaczne, minuty: m, kcalAktywne: O.aktywneZLacznych(kcalLaczne, m, M.pobierz().ustawienia) };
+}
+
+function podgladTreningu() {
+  const el = $('#tr-wynik'), t = treningZOkna();
+  el.hidden = !t;
+  if (!t) return;
+  const s = M.pobierz(), dodatek = O.dodatekTreningu(parametryDnia(s, ui.dzien).doliczanie, t);
+  el.textContent = O.maParametry(s.ustawienia)
+    ? `Aktywne: ${f(t.kcalLaczne)} − ${f(t.kcalLaczne - t.kcalAktywne)} spoczynkowych = ${f(t.kcalAktywne)} kcal. Do limitu: +${f(dodatek)} kcal.`
+    : `Do limitu: +${f(dodatek)} kcal. Bez danych osoby w Ustawieniach nie da się odjąć spoczynkowego spalania.`;
+}
+
 function zapiszTrening() {
-  const kcal = liczba($('#tr-kcal').value), uwaga = $('#tr-uwaga');
-  if (!(kcal > 0 && kcal < 5000)) {
-    uwaga.textContent = 'Podaj aktywne kcal z zegarka, np. 600.';
+  const t = treningZOkna(), uwaga = $('#tr-uwaga');
+  if (!t) {
+    uwaga.textContent = 'Podaj łączne kcal z zegarka (np. 700) i czas treningu w minutach.';
     uwaga.hidden = false;
     return;
   }
   const k = ui.dzien;
-  const trening = { id: M.noweId(), nazwa: $('#tr-nazwa').value.trim() || 'Trening', kcalAktywne: Math.round(kcal), start: $('#tr-start').value, koniec: $('#tr-koniec').value, zrodlo: 'recznie' };
+  const trening = { id: M.noweId(), nazwa: $('#tr-nazwa').value.trim() || 'Trening', ...t, zrodlo: 'recznie' };
   zmienDzien(k, dz => dz.treningi.push(trening));
   zamknijOkno();
   const dodatek = O.dodatekTreningu(parametryDnia(M.pobierz(), k).doliczanie, trening);
   komunikat(`Trening dodany: +${f(dodatek)} kcal do limitu`, () => zmienDzien(k, dz => { dz.treningi = dz.treningi.filter(x => x.id !== trening.id); }));
-}
-
-async function wklejZZegarka() {
-  let tekst;
-  try { tekst = await navigator.clipboard.readText(); } catch { return komunikat('Nie udało się odczytać schowka. Zezwól na wklejenie i spróbuj ponownie.'); }
-  const w = parsujZegarek(tekst);
-  if (w.blad) return komunikat(w.blad);
-  const k = D.kluczDnia(w.start), start = D.godzina(w.start), koniec = D.godzina(w.koniec);
-  const trening = { id: M.noweId(), nazwa: 'Trening (Apple Watch)', kcalAktywne: w.kcalAktywne, start, koniec, zrodlo: 'zegarek' };
-  // ponowne wklejenie tego samego treningu go zastępuje, a nie dubluje
-  zmienDzien(k, dz => { dz.treningi = dz.treningi.filter(t => !(t.zrodlo === 'zegarek' && t.start === start)).concat(trening); });
-  ui.dzien = k;
-  render();
-  komunikat(`Trening ${start}–${koniec}: ${f(w.kcalAktywne)} kcal aktywnych`);
 }
 
 // --- usuwanie z możliwością cofnięcia
@@ -362,7 +370,8 @@ function ekranHistoria(s) {
       <div class="podpisy">${D.SKROTY_DNI.map(x => `<span>${x}</span>`).join('')}</div>
     </section>
     <section class="sekcja"><h2>Dni</h2>
-      ${klucze.length ? `<div class="lista">${klucze.map(k => wierszHistorii(s, k, dzis)).join('')}</div>` : '<p class="pusto">Tu pojawią się dni z wpisami.</p>'}
+      ${klucze.length ? `<div class="lista">${klucze.slice(0, ui.dniHistorii).map(k => wierszHistorii(s, k, dzis)).join('')}</div>` : '<p class="pusto">Tu pojawią się dni z wpisami.</p>'}
+      ${klucze.length > ui.dniHistorii ? '<button class="drugi" data-akcja="starsze-dni">Pokaż starsze dni</button>' : ''}
     </section>`;
 }
 
@@ -495,10 +504,13 @@ function ekranUstawienia(s) {
       ${pole('sredniaDzienna', 'Średni limit dzienny (kcal)', u.sredniaDzienna, 'numeric', 'np. 2700')}
       <div class="pola-2">
         ${pole('treningiTydzien', 'Treningi w tygodniu', u.treningiTydzien, 'decimal')}
-        ${pole('typowyTrening', 'Typowy trening (kcal)', u.typowyTrening, 'numeric')}
+        ${pole('doliczanieTreningu', 'Doliczanie (%)', u.doliczanieTreningu, 'numeric')}
       </div>
-      ${pole('doliczanieTreningu', 'Doliczanie kcal z treningu (%)', u.doliczanieTreningu, 'numeric')}
-      <p class="opis">Tydzień trzyma średnią z planu: w dni bez treningu limit jest niższy, a po treningu rośnie o podany procent aktywnych kcal z zegarka.</p>
+      <div class="pola-2">
+        ${pole('typowyTrening', 'Typowy trening: kcal łącznie', u.typowyTrening, 'numeric')}
+        ${pole('typowyCzas', 'Typowy czas (min)', u.typowyCzas, 'numeric')}
+      </div>
+      <p class="opis">Tydzień trzyma średnią z planu: w dni bez treningu limit jest niższy, a po treningu rośnie o podany procent aktywnych kcal, czyli łącznych z zegarka minus spoczynkowe spalanie z czasu treningu.</p>
     </section>
     <section class="karta sekcja">
       <h2>Makro</h2>
@@ -558,9 +570,11 @@ function ustawStatus(c) {
 function ekranLogowania() {
   return `<div class="logowanie">
     <h1 class="serif">Bilans</h1>
-    <p class="podtytul">Zaloguj się kontem z Firebase. Dane widzi tylko to konto.</p>
+    <p class="podtytul">Zaloguj się swoim kontem. Dane widzi tylko to konto.</p>
     <label class="pole">E-mail<input id="log-email" type="email" inputmode="email" autocomplete="username" autocapitalize="off"></label>
     <label class="pole">Hasło<input id="log-haslo" type="password" autocomplete="current-password"></label>
+    <label class="checkbox"><input id="log-pamietaj" type="checkbox" checked>Nie wylogowuj mnie na tym urządzeniu</label>
+    <p class="opis">Logujesz się raz, potem aplikacja otwiera się od razu. Odznacz tylko na cudzym telefonie: po zamknięciu aplikacji konto i dane znikną z urządzenia.</p>
     <p id="log-blad" class="uwaga" hidden></p>
     <button class="glowny" data-akcja="zaloguj">Zaloguj się</button>
     <button class="maly" data-akcja="reset-hasla">Nie pamiętasz hasła?</button>
@@ -579,7 +593,7 @@ async function zalogujSie() {
   przycisk.disabled = true;
   przycisk.textContent = 'Loguję…';
   try {
-    await C.zaloguj(email, haslo);
+    await C.zaloguj(email, haslo, $('#log-pamietaj').checked);
   } catch (e) {
     pokazBladLogowania(C.opisBledu(e));
     przycisk.disabled = false;
@@ -600,7 +614,7 @@ async function przypomnijHaslo() {
 
 async function wylogujSie() {
   const ostrzezenia = [
-    ['offline', 'wysylanie', 'blad'].includes(ui.chmura.tryb) && 'Część zmian nie dotarła jeszcze do konta i po wylogowaniu zniknie.',
+    ['laczenie', 'offline', 'wysylanie', 'blad'].includes(ui.chmura.tryb) && 'Część zmian mogła jeszcze nie dotrzeć do konta i po wylogowaniu zniknie.',
     C.kopiaSprzedLogowania() && 'Kopia danych sprzed logowania zostanie usunięta z urządzenia.',
   ].filter(Boolean);
   if (ostrzezenia.length && !confirm(`${ostrzezenia.join(' ')} Wylogować mimo to?`)) return;
@@ -636,14 +650,18 @@ function pole(klucz, etykieta, wartosc, tryb, podpowiedz = '') {
 function wynikUstawien(u) {
   const baza = O.limitBazowy(u);
   if (baza === null) return '<h2>Wynik</h2><p class="opis">Wpisz średni limit dzienny z planu dietetyka, żeby policzyć limity.</p>';
-  const typowy = O.limitDnia(baza, u.doliczanieTreningu, [{ kcalAktywne: u.typowyTrening }]);
+  const aktywne = O.aktywneTypowego(u);
+  const typowy = O.limitDnia(baza, u.doliczanieTreningu, [{ kcalAktywne: aktywne }]);
   const cele = O.celeMakro(u.bialko, u.udzialT, { baza, dodatek: 0, razem: baza });
   const wiersze = [
     ['Dzień bez treningu', `${f(baza)} kcal`],
     [`Dzień z typowym treningiem (+${f(typowy.dodatek)})`, `${f(typowy.razem)} kcal`],
     ['Średnio w tygodniu', `${f(O.sredniaTygodnia(u))} kcal`],
   ];
-  if (O.maParametry(u)) wiersze.push(['Spoczynkowe spalanie (dolna granica)', `${f(O.ppm(u))} kcal`]);
+  if (O.maParametry(u)) {
+    wiersze.push(['Spoczynkowe spalanie (dolna granica)', `${f(O.ppm(u))} kcal`]);
+    wiersze.push(['Typowy trening: aktywne kcal', `${f(aktywne)} kcal`]);
+  }
   wiersze.push(['Makro w dzień bez treningu', `B ${cele.b} · T ${cele.t} · W ${cele.w} g`]);
   return `<h2>Wynik</h2>${wiersze.map(([n, v]) => `<div class="wiersz-wyniku"><span>${n}</span><b>${v}</b></div>`).join('')}
     ${O.podniesionyDoPPM(u) ? '<p class="uwaga">Limit dnia bez treningu podniesiono do spoczynkowego spalania.</p>' : ''}`;
@@ -701,7 +719,8 @@ function komunikat(tekst, cofnij) {
 // --- zdarzenia
 
 const AKCJE = {
-  'ekran': el => { ui.ekran = el.dataset.ekran; ui.filtr = 'Wszystkie'; ui.szukaj = ''; zamknijOkno(); zamknijArkusz(); render(); window.scrollTo(0, 0); },
+  'ekran': el => { ui.ekran = el.dataset.ekran; ui.filtr = 'Wszystkie'; ui.szukaj = ''; ui.dniHistorii = DNI_NA_STRONE; zamknijOkno(); zamknijArkusz(); render(); window.scrollTo(0, 0); },
+  'starsze-dni': () => { ui.dniHistorii += DNI_NA_STRONE; render(); },
   'wybierz-dzien': el => { ustawDzien(el.dataset.dzien); render(); },
   'pokaz-dzien': el => { ustawDzien(el.dataset.dzien); ui.ekran = 'dzisiaj'; render(); window.scrollTo(0, 0); },
   'tydzien': el => { ustawDzien(D.przesunDni(ui.dzien, Number(el.dataset.o))); render(); },
@@ -721,9 +740,6 @@ const AKCJE = {
   'spoza-listy': () => oknoSpozaListy(),
   'dodaj-reczny': () => dodajReczny(),
   'dodaj-trening': () => oknoTreningu(),
-  // skrót odczytuje Zdrowie (telefon jest wtedy odblokowany) i kładzie wynik do schowka; hasło nie jest mu potrzebne
-  'pobierz-z-zegarka': () => { location.href = `shortcuts://run-shortcut?name=${encodeURIComponent(SKROT_ZEGARKA)}`; },
-  'wklej-z-zegarka': () => wklejZZegarka(),
   'zapisz-trening': () => zapiszTrening(),
   'usun-wpis': el => usunZDnia('wpisy', el.dataset.id, x => x.nazwa),
   'usun-trening': el => usunZDnia('treningi', el.dataset.id, x => x.nazwa),
@@ -778,6 +794,8 @@ document.addEventListener('input', e => {
     zmienUstawienie(el);
   } else if (el.id?.startsWith('r-')) {
     sprawdzReczny();
+  } else if (el.id?.startsWith('tr-')) {
+    podgladTreningu();
   }
 });
 
@@ -803,6 +821,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => C.wyslijTeraz());
 
+C.sprzatnijPoSesji(M.wyczysc); // przed pierwszym rysowaniem
 M.subskrybuj(() => render());
 M.naZmianeLokalna(() => C.zaplanujWysylke());
 render();

@@ -7,6 +7,8 @@ const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 const KLUCZ_KONTA = 'bilans.konto';
 const KLUCZ_BAZY = 'bilans.zsynchronizowane';
 const KLUCZ_KOPII = 'bilans.kopia-sprzed-logowania';
+const KLUCZ_BEZ_PAMIECI = 'bilans.bez-zapamietania'; // zalogowano bez „Nie wylogowuj mnie”
+const KLUCZ_SESJI = 'bilans.sesja';                  // w sessionStorage: znika razem z sesją logowania
 const OPOZNIENIE_WYSYLKI = 600;
 
 export const kopiaSprzedLogowania = () => czytaj(KLUCZ_KOPII);
@@ -21,6 +23,7 @@ let baza = new Map();    // ścieżka → odcisk treści ostatnio zsynchronizowa
 let etap = 'czekam';     // 'czekam' na pierwsze dane, 'pytanie' o przeniesienie danych, 'gotowe'
 let obce = false;        // dane na urządzeniu nie pochodzą z tego konta
 let zegar = null;
+let usunKopieFirestore = false;
 
 export const skonfigurowana = () => !!FIREBASE;
 export const zalogowany = () => uzytkownik?.email || null;
@@ -28,11 +31,23 @@ export const zalogowany = () => uzytkownik?.email || null;
 function czytaj(klucz) { try { return JSON.parse(localStorage.getItem(klucz)); } catch { return null; } }
 function pisz(klucz, wartosc) { try { wartosc === null ? localStorage.removeItem(klucz) : localStorage.setItem(klucz, JSON.stringify(wartosc)); } catch {} }
 const zapiszBaze = () => pisz(KLUCZ_BAZY, Object.fromEntries(baza));
+function sesjaTrwa() { try { return sessionStorage.getItem(KLUCZ_SESJI) === '1'; } catch { return false; } }
+function oznaczSesje(trwa) { try { trwa ? sessionStorage.setItem(KLUCZ_SESJI, '1') : sessionStorage.removeItem(KLUCZ_SESJI); } catch {} }
+
+// Konto zalogowane bez „Nie wylogowuj mnie”, a aplikację od tego czasu zamknięto: dane konta znikają
+// z urządzenia, zanim ktokolwiek je zobaczy. Wywoływane przed pierwszym rysowaniem; kopię Firestore usuwa start().
+export function sprzatnijPoSesji(wyczysc) {
+  if (!FIREBASE || !czytaj(KLUCZ_BEZ_PAMIECI) || sesjaTrwa()) return;
+  [KLUCZ_KONTA, KLUCZ_BAZY, KLUCZ_KOPII, KLUCZ_BEZ_PAMIECI].forEach(k => pisz(k, null));
+  wyczysc();
+  usunKopieFirestore = true;
+}
 
 async function zaladujSdk() {
   const [app, auth, fs] = await Promise.all(['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].map(p => import(SDK + p)));
   const aplikacja = app.initializeApp(FIREBASE);
-  const a = auth.initializeAuth(aplikacja, { persistence: [auth.indexedDBLocalPersistence, auth.browserLocalPersistence] });
+  // sesja bez zapamiętania leży w sessionStorage; Firebase jej nie przenosi do pamięci trwałej
+  const a = auth.initializeAuth(aplikacja, { persistence: [auth.indexedDBLocalPersistence, auth.browserLocalPersistence, auth.browserSessionPersistence] });
   const db = fs.initializeFirestore(aplikacja, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentSingleTabManager() }), ignoreUndefinedProperties: true });
   return { app: aplikacja, auth, fs, a, db };
 }
@@ -48,6 +63,8 @@ export async function start(funkcje) {
     api.status({ tryb: 'brak-biblioteki' });
     return;
   }
+  // Firestore jeszcze nie ruszył, więc jego kopię danych zakończonej sesji można teraz usunąć
+  if (usunKopieFirestore) await fb.fs.clearIndexedDbPersistence(fb.db).catch(() => {});
   fb.auth.onAuthStateChanged(fb.a, u => (u ? polacz(u) : rozlacz()));
 }
 
@@ -69,7 +86,13 @@ function polacz(u) {
   const odbierz = (czesc, wartosc, meta) => {
     czesci[czesc] = wartosc;
     czesci.meta[czesc] = meta;
-    if (etap !== 'pytanie' && ['konto', 'posilki', 'dni'].every(k => czesci[k] !== undefined)) naDaneZChmury();
+    if (etap === 'pytanie') return;
+    if (etap === 'czekam' && !S.potwierdzonePrzezSerwer(czesci)) {
+      // do tego czasu zmiany zostają na urządzeniu; wyślą się po pierwszym scaleniu
+      api.status({ tryb: navigator.onLine === false ? 'offline' : 'laczenie', email: u.email });
+      return;
+    }
+    naDaneZChmury();
   };
   odpiecia = [
     fs.onSnapshot(sciezkaDokumentu(S.SCIEZKA_KONTA), opcje, d => odbierz('konto', d.exists() ? d.data() : null, d.metadata), blad),
@@ -166,9 +189,13 @@ function rozlacz() {
   api.pokazLogowanie(true);
 }
 
-export async function zaloguj(email, haslo) {
+// Domyślnie konto zostaje zalogowane na urządzeniu; bez zapamiętania tylko do zamknięcia aplikacji.
+export async function zaloguj(email, haslo, zapamietaj = true) {
   if (!fb) throw Object.assign(new Error('brak biblioteki'), { code: 'auth/network-request-failed' });
+  await fb.auth.setPersistence(fb.a, zapamietaj ? fb.auth.indexedDBLocalPersistence : fb.auth.browserSessionPersistence);
   await fb.auth.signInWithEmailAndPassword(fb.a, email.trim(), haslo);
+  pisz(KLUCZ_BEZ_PAMIECI, zapamietaj ? null : true);
+  oznaczSesje(!zapamietaj);
 }
 
 export async function resetujHaslo(email) {
@@ -184,9 +211,8 @@ export async function wyloguj() {
     await fb.fs.terminate(fb.db);
     await fb.fs.clearIndexedDbPersistence(fb.db);
   } catch {}
-  pisz(KLUCZ_KONTA, null);
-  pisz(KLUCZ_BAZY, null);
-  pisz(KLUCZ_KOPII, null);
+  [KLUCZ_KONTA, KLUCZ_BAZY, KLUCZ_KOPII, KLUCZ_BEZ_PAMIECI].forEach(k => pisz(k, null));
+  oznaczSesje(false);
   api.wyczysc();
   location.reload();
 }
