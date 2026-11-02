@@ -1,0 +1,10 @@
+rules_version = '2';
+// Bilans: każde konto czyta i zmienia wyłącznie swoje dane (uzytkownicy/{uid} i wszystko pod spodem).
+// Wklejane w konsoli Firebase: Firestore Database → Reguły → Opublikuj.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /uzytkownicy/{uid}/{dokument=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Kod tylko z aplikacji i bibliotek Firebase/pdf.js; połączenia tylko z Google (Firebase); żadnych ramek ani wtyczek. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.googleapis.com; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>Bilans</title>
+<meta name="description" content="Prosty licznik kalorii i makro z posiłków z planu dietetyka.">
+<meta name="theme-color" content="#E5F2EB" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1F1A" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Bilans">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="ikony/ikona-192.png">
+<link rel="apple-touch-icon" href="ikony/ikona-180.png">
+<link rel="stylesheet" href="styl.css">
+</head>
+<body>
+<div class="aplikacja">
+  <main id="ekran" class="ekran"></main>
+  <nav id="zakladki" class="zakladki" aria-label="Ekrany"></nav>
+</div>
+<div id="arkusz" class="arkusz" hidden></div>
+<div id="okno" class="okno" hidden></div>
+<div id="komunikat" class="komunikat" role="status" hidden></div>
+<script type="module" src="js/aplikacja.js"></script>
+</body>
+</html>
