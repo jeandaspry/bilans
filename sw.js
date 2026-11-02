@@ -1,6 +1,6 @@
 // Service worker: pliki aplikacji najpierw z sieci (zawsze najnowsza wersja), bez sieci z kopii w telefonie.
 // Biblioteki z CDN (Firebase, pdf.js) mają numer wersji w adresie, więc wystarczy raz je zapisać.
-const WERSJA = 'bilans-0.7';
+const WERSJA = 'bilans-0.8';
 const PLIKI = [
   './', 'index.html', 'styl.css', 'manifest.webmanifest',
   'js/aplikacja.js', 'js/obliczenia.js', 'js/daty.js', 'js/magazyn.js', 'js/ikony.js', 'js/tekst.js', 'js/dane-testowe.js',

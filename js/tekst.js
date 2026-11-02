@@ -10,6 +10,7 @@ export function liczba(v) {
 }
 
 export const f = n => Math.round(n).toLocaleString('pl-PL');
+export const f1 = n => (Math.round(n * 10) / 10).toLocaleString('pl-PL');
 
 const OPISY_PORCJI = { 0.75: '¾ porcji', 0.5: '½ porcji', 0.25: '¼ porcji' };
 export const opisPorcji = u => OPISY_PORCJI[u] || `${Math.round(u * 100)}% porcji`;

@@ -105,6 +105,7 @@ h2 { font-size: 17px; font-weight: 600; }
 .pigulka { padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--dobrze-tlo); color: var(--lisc); }
 .pigulka.ponad { background: var(--ponad-tlo); color: var(--ponad); }
 .rozbicie { font-size: 13px; color: var(--szary); }
+.podtytul-wyniku { margin-top: 16px; }
 .bilans-tygodnia { width: 100%; display: flex; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid var(--linia); font-size: 14px; color: var(--szary); }
 .bilans-tygodnia b { color: var(--lisc); }
 .bilans-tygodnia b.ponad { color: var(--ponad); }

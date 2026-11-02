@@ -5,7 +5,7 @@
 export const DOMYSLNE_USTAWIENIA = {
   sredniaDzienna: null, treningiTydzien: 3.5, typowyTrening: 600, typowyCzas: 60, doliczanieTreningu: 75,
   bialko: null, udzialT: 36,
-  plec: '', wiek: null, wzrost: null, masa: null,
+  plec: '', wiek: null, wzrost: null, masa: null, aktywnosc: 1.6,
 };
 
 const zaokr1 = x => Math.round(x * 10) / 10;
@@ -19,7 +19,32 @@ export function maParametry(u) {
   return (u.plec === 'K' || u.plec === 'M') && u.wiek > 0 && u.wzrost > 0 && u.masa > 0;
 }
 
-export const dodatekTreningu = (doliczanie, trening) => Math.round((Number(trening.kcalAktywne) || 0) * doliczanie / 100);
+// Metoda Respo (blog Centrum Respo): utrzymanie wagi = PPM × współczynnik aktywności z tabeli praca × czas wolny
+// (treningi uśrednione na tydzień), odchudzanie = utrzymanie − 15%, dobre tempo 0,5–1 kg tygodniowo.
+const KCAL_NA_KG = 7700;
+
+export function zapotrzebowanie(u) {
+  if (!maParametry(u) || !(u.aktywnosc > 0)) return null;
+  const doZycia = ppm(u), utrzymanie = doZycia * u.aktywnosc;
+  return { doZycia, utrzymanie, chudniecie: utrzymanie * 0.85 };
+}
+
+// kg tygodniowo przy danej średniej: dodatnie to chudnięcie, ujemne tycie.
+export const tempoTygodniowe = (utrzymanie, srednia) => (utrzymanie - srednia) * 7 / KCAL_NA_KG;
+
+// Nowa średnia, gdy po zmianie wagi albo aktywności plan wychodzi poza 0,5–1 kg tygodniowo (z zapasem 100 kcal,
+// bo dietetyk Respo koryguje o 100–200 kcal). Nigdy poniżej spoczynkowego spalania; null, gdy plan pasuje.
+export function propozycjaSredniej(u) {
+  const z = zapotrzebowanie(u);
+  if (!z || !(u.sredniaDzienna > 0)) return null;
+  const deficyt = z.utrzymanie - u.sredniaDzienna, dzienneNaKg = KCAL_NA_KG / 7;
+  const cel = deficyt < 0.5 * dzienneNaKg - 100 ? 0.5 : deficyt > dzienneNaKg + 100 ? 1 : null;
+  if (cel === null) return null;
+  const nowa = Math.max(Math.round(z.doZycia), Math.round((z.utrzymanie - cel * dzienneNaKg) / 10) * 10);
+  return Math.abs(nowa - u.sredniaDzienna) >= 100 ? nowa : null;
+}
+
+export const dodatekTreningu =(doliczanie, trening) => Math.round((Number(trening.kcalAktywne) || 0) * doliczanie / 100);
 
 // Każdy trening zaokrąglany osobno, żeby kwoty z kart treningów sumowały się do limitu.
 export const dodatekZaTreningi = (doliczanie, treningi = []) => treningi.reduce((s, t) => s + dodatekTreningu(doliczanie, t), 0);

@@ -3,12 +3,12 @@ import * as M from './magazyn.js';
 import * as O from './obliczenia.js';
 import * as D from './daty.js';
 import { IKONY } from './ikony.js';
-import { esc, bezOgonkow, liczba, f, opisPorcji, odmianaPosilkow } from './tekst.js';
+import { esc, bezOgonkow, liczba, f, f1, opisPorcji, odmianaPosilkow } from './tekst.js';
 import { POSILKI_TESTOWE } from './dane-testowe.js';
 import * as R from './import-respo.js';
 import * as C from './chmura.js';
 
-const WERSJA = '0.7';
+const WERSJA = '0.8';
 const KATEGORIE = ['Posiłek 1', 'Posiłek 2', 'Posiłek 3', 'Przekąska'];
 const ZNAKI = { 'Posiłek 1': '1', 'Posiłek 2': '2', 'Posiłek 3': '3', 'Przekąska': 'P', 'Własne': 'W' };
 const ZAKLADKI = [['dzisiaj', 'Dzisiaj'], ['historia', 'Historia'], ['posilki', 'Posiłki'], ['ustawienia', 'Ustawienia']];
@@ -17,7 +17,7 @@ const DNI_NA_STRONE = 60; // Historia rysuje tyle dni naraz, żeby po latach wpi
 // Dopuszczalne wartości ustawień; puste pole z listy OPCJONALNE znaczy „nie wpisano”.
 const ZAKRESY = {
   sredniaDzienna: [1000, 6000], treningiTydzien: [0, 14], typowyTrening: [0, 3000], typowyCzas: [5, 300], doliczanieTreningu: [0, 100],
-  bialko: [20, 400], udzialT: [10, 60], wiek: [14, 100], wzrost: [120, 230], masa: [35, 350],
+  bialko: [20, 400], udzialT: [10, 60], wiek: [14, 100], wzrost: [120, 230], masa: [35, 350], aktywnosc: [1.2, 2.5],
 };
 const OPCJONALNE = ['sredniaDzienna', 'bialko', 'wiek', 'wzrost', 'masa'];
 
@@ -532,7 +532,7 @@ function ekranUstawienia(s) {
     </section>
     <section class="karta sekcja">
       <h2>Dane osoby</h2>
-      <p class="opis">Służą do spoczynkowego spalania: limit nigdy nie spadnie poniżej tej wartości.</p>
+      <p class="opis">Z nich aplikacja liczy zapotrzebowanie metodą Respo i dolną granicę limitu. Po zmianie wagi albo aktywności przelicza wszystko od razu.</p>
       <div class="segment" role="group" aria-label="Płeć">
         <button class="${u.plec === 'K' ? 'on' : ''}" data-akcja="plec" data-plec="K" aria-pressed="${u.plec === 'K'}">Kobieta</button>
         <button class="${u.plec === 'M' ? 'on' : ''}" data-akcja="plec" data-plec="M" aria-pressed="${u.plec === 'M'}">Mężczyzna</button>
@@ -541,7 +541,9 @@ function ekranUstawienia(s) {
         ${pole('wiek', 'Wiek (lata)', u.wiek, 'numeric')}
         ${pole('wzrost', 'Wzrost (cm)', u.wzrost, 'numeric')}
         ${pole('masa', 'Masa ciała (kg)', u.masa, 'decimal')}
+        ${pole('aktywnosc', 'Aktywność', u.aktywnosc, 'decimal')}
       </div>
+      <p class="opis">Aktywność według tabeli Respo: 1,4 praca siedząca bez ćwiczeń; 1,5 ćwiczenia ok. raz w tygodniu; 1,6 praca siedząca, mało chodzenia, siłownia 3–4 razy w tygodniu (tyle wynika z planu dietetyka); 1,7 i więcej przy większym ruchu albo pracy fizycznej.</p>
     </section>
     <section class="karta sekcja" id="wynik-ustawien">${wynikUstawien(u)}</section>
     <section class="karta sekcja">
@@ -673,8 +675,24 @@ function wynikUstawien(u) {
     wiersze.push(['Typowy trening: aktywne kcal', `${f(aktywne)} kcal`]);
   }
   wiersze.push(['Makro w dzień bez treningu', `B ${cele.b} · T ${cele.t} · W ${cele.w} g`]);
-  return `<h2>Wynik</h2>${wiersze.map(([n, v]) => `<div class="wiersz-wyniku"><span>${n}</span><b>${v}</b></div>`).join('')}
-    ${O.podniesionyDoPPM(u) ? '<p class="uwaga">Limit dnia bez treningu podniesiono do spoczynkowego spalania.</p>' : ''}`;
+  const wiersz = ([n, v]) => `<div class="wiersz-wyniku"><span>${n}</span><b>${v}</b></div>`;
+  return `<h2>Wynik</h2>${wiersze.map(wiersz).join('')}
+    ${O.podniesionyDoPPM(u) ? '<p class="uwaga">Limit dnia bez treningu podniesiono do spoczynkowego spalania.</p>' : ''}
+    ${zapotrzebowanieOsoby(u, wiersz)}`;
+}
+
+// Zapotrzebowanie metodą Respo; gdy plan po zmianie wagi albo aktywności wyszedł poza 0,5–1 kg tygodniowo,
+// aplikacja proponuje nową średnią, ale zmienia ją dopiero po dotknięciu (średnia jest od dietetyka).
+function zapotrzebowanieOsoby(u, wiersz) {
+  const z = O.zapotrzebowanie(u);
+  if (!z) return '<p class="opis">Uzupełnij dane osoby, żeby policzyć zapotrzebowanie.</p>';
+  const tempo = O.tempoTygodniowe(z.utrzymanie, u.sredniaDzienna);
+  const opisTempa = Math.abs(tempo) < 0.05 ? 'waga stoi' : `ok. ${f1(Math.abs(tempo))} kg ${tempo > 0 ? 'mniej' : 'więcej'} tygodniowo`;
+  const nowa = O.propozycjaSredniej(u);
+  return `<h2 class="podtytul-wyniku">Zapotrzebowanie (metoda Respo)</h2>
+    ${[['Do życia (spoczynkowe)', `${f(z.doZycia)} kcal`], ['Utrzymanie wagi', `${f(z.utrzymanie)} kcal`], ['Chudnięcie (−15%)', `${f(z.chudniecie)} kcal`], [`Przy średniej ${f(u.sredniaDzienna)} kcal`, opisTempa]].map(wiersz).join('')}
+    ${nowa ? `<p class="uwaga">Przy tej wadze i aktywności średnia ${f(u.sredniaDzienna)} kcal daje ${opisTempa}. Dobre tempo według Respo to 0,5–1 kg tygodniowo; wychodzi na nie średnia ${f(nowa)} kcal.</p>
+      <button class="drugi" data-akcja="ustaw-srednia" data-kcal="${nowa}">Ustaw średnią ${f(nowa)} kcal</button>` : ''}`;
 }
 
 function zmienUstawienie(el) {
@@ -754,6 +772,12 @@ const AKCJE = {
   'usun-wpis': el => usunZDnia('wpisy', el.dataset.id, x => x.nazwa),
   'usun-trening': el => usunZDnia('treningi', el.dataset.id, x => x.nazwa),
   'plec': el => M.zmien(s => { s.ustawienia.plec = el.dataset.plec; odswiezDzisiejszyZapis(s); }),
+  'ustaw-srednia': el => {
+    const nowa = Number(el.dataset.kcal), poprzednia = M.pobierz().ustawienia.sredniaDzienna;
+    const ustaw = v => M.zmien(s => { s.ustawienia.sredniaDzienna = v; odswiezDzisiejszyZapis(s); });
+    ustaw(nowa);
+    komunikat(`Średni limit: ${f(nowa)} kcal`, () => ustaw(poprzednia));
+  },
   'zaloguj': () => zalogujSie(),
   'reset-hasla': () => przypomnijHaslo(),
   'wyloguj': () => wylogujSie(),

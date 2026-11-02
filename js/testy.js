@@ -65,6 +65,17 @@ test('rozjazd Atwatera', () => rowne(O.rozjazdAtwater({ kcal: 600, b: 40, t: 20,
 test('bilans: zostało', () => rowne(O.bilans(1645, 2763), { stan: 'zostalo', kcal: 1118 }));
 test('bilans: równo w limicie', () => rowne(O.bilans(2238, 2238), { stan: 'zostalo', kcal: 0 }));
 test('bilans: ponad limit', () => rowne(O.bilans(2300, 2238), { stan: 'ponad', kcal: 62 }));
+// Zapotrzebowanie metodą Respo, osoba zmyślona (PPM 1780), aktywność 1,6: utrzymanie 2848, chudnięcie 2420,8
+const zAktywnoscia = { ...plan, ...osoba, aktywnosc: 1.6 };
+test('Respo: do życia, utrzymanie, chudnięcie (−15%)', () => rowne(Object.values(O.zapotrzebowanie(zAktywnoscia)).map(Math.round), [1780, 2848, 2421]));
+test('Respo: bez danych osoby nie ma zapotrzebowania', () => rowne(O.zapotrzebowanie({ ...plan, aktywnosc: 1.6 }), null));
+// (2848 − 2500) · 7 / 7700 = 0,316 kg tygodniowo
+test('Respo: tempo przy średniej z planu', () => rowne(O.tempoTygodniowe(2848, 2500).toFixed(3), '0.316'));
+// deficyt 348 < 450 → średnia na 0,5 kg: 2848 − 550 = 2298 → 2300
+test('Respo: za wolno → propozycja na 0,5 kg tygodniowo', () => rowne(O.propozycjaSredniej(zAktywnoscia), 2300));
+test('Respo: plan w normie → bez propozycji', () => rowne(O.propozycjaSredniej({ ...zAktywnoscia, sredniaDzienna: 2300 }), null));
+// deficyt 2848 − 1600 = 1248 > 1200 → na 1 kg: 2848 − 1100 = 1748 → 1750, ale to mniej niż PPM 1780 → 1780
+test('Respo: za szybko → propozycja, nigdy poniżej spoczynkowego', () => rowne(O.propozycjaSredniej({ ...zAktywnoscia, sredniaDzienna: 1600 }), 1780));
 // Tydzień: pn z treningiem 2931, zjedzone 2700 (zapas 231); wt bez treningu 2470, zjedzone 2700 (230 ponad) → zapas 1
 const pn = { k: '2026-11-02', limit: 2931, zjedzone: 2700, wpisy: 4 }, wt = { k: '2026-11-03', limit: 2470, zjedzone: 2700, wpisy: 4 };
 test('bilans tygodnia: przekąska w dzień bez treningu mieści się w tygodniu', () => rowne(O.bilansTygodnia([pn, wt], wt.k), { stan: 'zostalo', kcal: 1 }));
