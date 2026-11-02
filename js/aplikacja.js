@@ -7,8 +7,10 @@ import { esc, bezOgonkow, liczba, f, opisPorcji, odmianaPosilkow } from './tekst
 import { POSILKI_TESTOWE } from './dane-testowe.js';
 import * as R from './import-respo.js';
 import * as C from './chmura.js';
+import { parsujZegarek } from './zegarek.js';
 
-const WERSJA = '0.4';
+const WERSJA = '0.5';
+const SKROT_ZEGARKA = 'Bilans trening';
 const KATEGORIE = ['Posiłek 1', 'Posiłek 2', 'Posiłek 3', 'Przekąska'];
 const ZNAKI = { 'Posiłek 1': '1', 'Posiłek 2': '2', 'Posiłek 3': '3', 'Przekąska': 'P', 'Własne': 'W' };
 const ZAKLADKI = [['dzisiaj', 'Dzisiaj'], ['historia', 'Historia'], ['posilki', 'Posiłki'], ['ustawienia', 'Ustawienia']];
@@ -105,6 +107,10 @@ function ekranDzisiaj(s) {
     <section class="sekcja">
       <div class="sekcja-tytul"><h2>Trening</h2><button class="maly" data-akcja="dodaj-trening">${IKONY.plus}Dodaj</button></div>
       ${dz.treningi.length ? `<div class="lista">${dz.treningi.map(t => kartaTreningu(t, p.doliczanie)).join('')}</div>` : '<p class="pusto">Brak treningu w tym dniu.</p>'}
+      <div class="pola-2">
+        <button class="drugi" data-akcja="pobierz-z-zegarka">${IKONY.hantla}Z zegarka</button>
+        <button class="drugi" data-akcja="wklej-z-zegarka">Wklej wynik</button>
+      </div>
     </section>
     <section class="sekcja">
       <h2>Zjedzone</h2>
@@ -307,6 +313,20 @@ function zapiszTrening() {
   zamknijOkno();
   const dodatek = O.dodatekTreningu(parametryDnia(M.pobierz(), k).doliczanie, trening);
   komunikat(`Trening dodany: +${f(dodatek)} kcal do limitu`, () => zmienDzien(k, dz => { dz.treningi = dz.treningi.filter(x => x.id !== trening.id); }));
+}
+
+async function wklejZZegarka() {
+  let tekst;
+  try { tekst = await navigator.clipboard.readText(); } catch { return komunikat('Nie udało się odczytać schowka. Zezwól na wklejenie i spróbuj ponownie.'); }
+  const w = parsujZegarek(tekst);
+  if (w.blad) return komunikat(w.blad);
+  const k = D.kluczDnia(w.start), start = D.godzina(w.start), koniec = D.godzina(w.koniec);
+  const trening = { id: M.noweId(), nazwa: 'Trening (Apple Watch)', kcalAktywne: w.kcalAktywne, start, koniec, zrodlo: 'zegarek' };
+  // ponowne wklejenie tego samego treningu go zastępuje, a nie dubluje
+  zmienDzien(k, dz => { dz.treningi = dz.treningi.filter(t => !(t.zrodlo === 'zegarek' && t.start === start)).concat(trening); });
+  ui.dzien = k;
+  render();
+  komunikat(`Trening ${start}–${koniec}: ${f(w.kcalAktywne)} kcal aktywnych`);
 }
 
 // --- usuwanie z możliwością cofnięcia
@@ -701,6 +721,9 @@ const AKCJE = {
   'spoza-listy': () => oknoSpozaListy(),
   'dodaj-reczny': () => dodajReczny(),
   'dodaj-trening': () => oknoTreningu(),
+  // skrót odczytuje Zdrowie (telefon jest wtedy odblokowany) i kładzie wynik do schowka; hasło nie jest mu potrzebne
+  'pobierz-z-zegarka': () => { location.href = `shortcuts://run-shortcut?name=${encodeURIComponent(SKROT_ZEGARKA)}`; },
+  'wklej-z-zegarka': () => wklejZZegarka(),
   'zapisz-trening': () => zapiszTrening(),
   'usun-wpis': el => usunZDnia('wpisy', el.dataset.id, x => x.nazwa),
   'usun-trening': el => usunZDnia('treningi', el.dataset.id, x => x.nazwa),

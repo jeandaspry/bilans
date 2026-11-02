@@ -4,6 +4,7 @@ import * as D from './daty.js';
 import { liczba, bezOgonkow, esc, odmianaPosilkow } from './tekst.js';
 import * as R from './import-respo.js';
 import * as S from './synchronizacja.js';
+import { parsujZegarek } from './zegarek.js';
 
 const wyniki = [];
 const test = (nazwa, fn) => {
@@ -167,6 +168,15 @@ test('sync: echo własnego zapisu niczego nie zmienia', () => {
   rowne([S.takieSame(S.scalDokumenty(lokalne, zChmury, S.skroty(zChmury)).wynik, lokalne), S.takieSame(lokalne, dok(['.', {}]))], [true, false]);
 });
 test('sync: co przenieść na puste konto', () => rowne([S.coPrzeniesc(stanTestowy), S.coPrzeniesc({ ustawienia: {}, posilki: [], dni: { '2026-11-01': { wpisy: [], treningi: [] } } })], [{ posilki: 1, dni: 1, ustawienia: true }, null]));
+
+// Zegarek: próbki przed treningiem (17:50), w trakcie (18:10, 18:40 z przecinkiem) i po (19:30)
+const ZEGAREK = ['BILANS-TRENING', 'START: 2026-11-02T18:00:00+01:00', 'KONIEC: 2026-11-02T19:15:00+01:00', 'DATY:',
+  '2026-11-02T17:50:00+01:00', '2026-11-02T18:10:00+01:00', '2026-11-02T18:40:00+01:00', '2026-11-02T19:30:00+01:00',
+  'KCAL:', '5', '250', '300,4', '7'].join('\n');
+test('zegarek: suma kcal tylko z okna treningu', () => rowne(parsujZegarek(ZEGAREK).kcalAktywne, 550));
+test('zegarek: obcy tekst w schowku', () => rowne(!!parsujZegarek('coś innego').blad, true));
+test('zegarek: trening jeszcze trwa', () => rowne(!!parsujZegarek(ZEGAREK.replace('KONIEC: 2026-11-02T19:15', 'KONIEC: 2026-11-02T17:00')).blad, true));
+test('zegarek: liczba dat i kcal musi się zgadzać', () => rowne(!!parsujZegarek(ZEGAREK.replace('\n7', '')).blad, true));
 
 const zle = wyniki.filter(w => !w.ok);
 document.getElementById('podsumowanie').innerHTML = `<b class="${zle.length ? 'zle' : 'ok'}">Wynik: ${wyniki.length - zle.length}/${wyniki.length} zaliczonych</b>`;
