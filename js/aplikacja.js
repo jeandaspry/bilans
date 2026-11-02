@@ -8,7 +8,7 @@ import { POSILKI_TESTOWE } from './dane-testowe.js';
 import * as R from './import-respo.js';
 import * as C from './chmura.js';
 
-const WERSJA = '0.6';
+const WERSJA = '0.7';
 const KATEGORIE = ['Posiłek 1', 'Posiłek 2', 'Posiłek 3', 'Przekąska'];
 const ZNAKI = { 'Posiłek 1': '1', 'Posiłek 2': '2', 'Posiłek 3': '3', 'Przekąska': 'P', 'Własne': 'W' };
 const ZAKLADKI = [['dzisiaj', 'Dzisiaj'], ['historia', 'Historia'], ['posilki', 'Posiłki'], ['ustawienia', 'Ustawienia']];
@@ -102,7 +102,7 @@ function ekranDzisiaj(s) {
   return `
     <header class="naglowek"><h1 class="serif">${esc(D.nazwaDnia(k, dzis))}</h1><p class="podtytul">${esc(D.opisDnia(k))}</p></header>
     ${pasekTygodnia(s, k, dzis)}
-    ${limit ? kartaLimitu(suma, limit, cele) : kartaBezLimitu(suma)}
+    ${limit ? kartaLimitu(suma, limit, cele, bilansTygodniaDo(s, k)) : kartaBezLimitu(suma)}
     <section class="sekcja">
       <div class="sekcja-tytul"><h2>Trening</h2><button class="maly" data-akcja="dodaj-trening">${IKONY.plus}Dodaj</button></div>
       ${dz.treningi.length ? `<div class="lista">${dz.treningi.map(t => kartaTreningu(t, p.doliczanie)).join('')}</div>` : '<p class="pusto">Brak treningu w tym dniu.</p>'}
@@ -133,13 +133,23 @@ function wskaznik(zjedzone, limit) {
   return `<svg class="wskaznik" viewBox="0 0 200 116" aria-hidden="true"><path class="tor" d="${luk}" pathLength="100"/>${postep}</svg>`;
 }
 
-function kartaLimitu(suma, limit, cele) {
+// Dni tygodnia do wybranego włącznie, każdy z limitem z jego dnia (minione z zapisanych ustawień).
+function bilansTygodniaDo(s, k) {
+  const dni = D.dniTygodnia(k).filter(d => d <= k).map(d => {
+    const x = obliczDzien(s, d);
+    return { k: d, limit: x.limit?.razem ?? null, zjedzone: x.suma.kcal, wpisy: x.dz.wpisy.length };
+  });
+  return O.bilansTygodnia(dni, k);
+}
+
+function kartaLimitu(suma, limit, cele, tydzien) {
   const bil = O.bilans(suma.kcal, limit.razem);
   return `<section class="karta wskaznik-karta">
     <div class="wskaznik-kontener">${wskaznik(suma.kcal, limit.razem)}
       <div class="wynik"><b class="serif liczby">${f(suma.kcal)}</b><span>z ${f(limit.razem)} kcal</span></div></div>
     <p class="pigulka ${bil.stan}">${bil.stan === 'zostalo' ? 'Zostało' : 'Ponad limit o'} ${f(bil.kcal)} kcal</p>
     ${limit.dodatek ? `<p class="rozbicie">Limit ${f(limit.baza)} + ${f(limit.dodatek)} kcal za trening</p>` : ''}
+    ${tydzien ? `<p class="bilans-tygodnia"><span>Tydzień od poniedziałku</span><b class="liczby ${tydzien.stan}">${tydzien.stan === 'zostalo' ? `zostało ${f(tydzien.kcal)} kcal` : `${f(tydzien.kcal)} kcal ponad`}</b></p>` : ''}
     <div class="makra">${pasekMakro('Białko', 'b', suma.b, cele.b)}${pasekMakro('Tłuszcze', 't', suma.t, cele.t)}${pasekMakro('Węglowodany', 'w', suma.w, cele.w)}</div>
   </section>`;
 }

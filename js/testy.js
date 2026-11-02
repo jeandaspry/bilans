@@ -65,6 +65,16 @@ test('rozjazd Atwatera', () => rowne(O.rozjazdAtwater({ kcal: 600, b: 40, t: 20,
 test('bilans: zostało', () => rowne(O.bilans(1645, 2763), { stan: 'zostalo', kcal: 1118 }));
 test('bilans: równo w limicie', () => rowne(O.bilans(2238, 2238), { stan: 'zostalo', kcal: 0 }));
 test('bilans: ponad limit', () => rowne(O.bilans(2300, 2238), { stan: 'ponad', kcal: 62 }));
+// Tydzień: pn z treningiem 2931, zjedzone 2700 (zapas 231); wt bez treningu 2470, zjedzone 2700 (230 ponad) → zapas 1
+const pn = { k: '2026-11-02', limit: 2931, zjedzone: 2700, wpisy: 4 }, wt = { k: '2026-11-03', limit: 2470, zjedzone: 2700, wpisy: 4 };
+test('bilans tygodnia: przekąska w dzień bez treningu mieści się w tygodniu', () => rowne(O.bilansTygodnia([pn, wt], wt.k), { stan: 'zostalo', kcal: 1 }));
+test('bilans tygodnia: w pierwszym dniu tygodnia go nie ma (byłby jak dnia)', () => rowne(O.bilansTygodnia([pn, wt], pn.k), null));
+test('bilans tygodnia: dzień bez wpisów albo bez limitu się nie liczy', () => rowne([O.bilansTygodnia([{ ...pn, zjedzone: 0, wpisy: 0 }, wt], wt.k), O.bilansTygodnia([{ ...pn, limit: null }, wt], wt.k)], [null, null]));
+// (2470 − 2700) + (2470 − 2700) = −460
+test('bilans tygodnia: nadwyżki się sumują', () => rowne(O.bilansTygodnia([{ ...pn, limit: 2470 }, wt], wt.k), { stan: 'ponad', kcal: 460 }));
+test('bilans tygodnia: dni po wybranym się nie liczą', () => rowne(O.bilansTygodnia([pn, wt, { k: '2026-11-04', limit: 2470, zjedzone: 3500, wpisy: 5 }], wt.k), { stan: 'zostalo', kcal: 1 }));
+// rano przed śniadaniem: zapas z poniedziałku 231 + cały limit wtorku 2470
+test('bilans tygodnia: wybrany dzień bez wpisów liczy się całym limitem', () => rowne(O.bilansTygodnia([pn, { ...wt, zjedzone: 0, wpisy: 0 }], wt.k), { stan: 'zostalo', kcal: 2701 }));
 // 8101 / 3 = 2700,33 → 2700
 test('średnia', () => rowne([O.srednia([2600, 2700, 2801]), O.srednia([])], [2700, 0]));
 

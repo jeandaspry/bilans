@@ -90,4 +90,15 @@ export function bilans(zjedzone, limit) {
   return r >= 0 ? { stan: 'zostalo', kcal: r } : { stan: 'ponad', kcal: -r };
 }
 
+// Bilans tygodnia od poniedziałku do wybranego dnia: dzień ponad limit (np. przekąska w dzień bez treningu)
+// widać na tle dni z zapasem. Wcześniejsze dni bez wpisów (niezapisane) się nie liczą, wybrany dzień zawsze.
+// dni: [{ k, limit, zjedzone, wpisy }]; null, gdy przed wybranym dniem nic się nie liczy (wynik byłby jak dnia).
+export function bilansTygodnia(dni, wybrany) {
+  const dzien = dni.find(d => d.k === wybrany);
+  const wczesniej = dni.filter(d => d.k < wybrany && d.wpisy > 0 && d.limit > 0);
+  if (!dzien || !wczesniej.length) return null;
+  const liczone = [...wczesniej, dzien];
+  return bilans(liczone.reduce((a, d) => a + d.zjedzone, 0), liczone.reduce((a, d) => a + d.limit, 0));
+}
+
 export const srednia = liczby => (liczby.length ? Math.round(liczby.reduce((a, x) => a + x, 0) / liczby.length) : 0);
